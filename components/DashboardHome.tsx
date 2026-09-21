@@ -987,13 +987,14 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
         {visibleAppointments.map((apt) => {
           const isConfirmed = apt.status === 'Confirmado';
+          const isWaitingConfirmation = apt.status === 'Aguardando Confirmação';
           const displayName = apt.clientNickname || apt.client;
           const isPackage = apt.category && apt.category.toUpperCase().includes('PACOTE');
           const packageInfo = isPackage ? getPackageInfo(apt) : null;
           const isReward = apt.isReward;
           return (
-            <div key={apt.id} className={`bg-white rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-all relative overflow-hidden flex flex-col p-3 gap-2.5 ${isReward ? 'ring-2 ring-yellow-200' : ''}`}>
-               <div className={`absolute top-0 left-0 w-1 h-full ${isReward ? 'bg-yellow-400' : (isConfirmed ? 'bg-emerald-400' : 'bg-purple-400')}`}></div>
+            <div key={apt.id} className={`bg-white rounded-xl shadow-sm border ${isWaitingConfirmation ? 'border-amber-200 ring-1 ring-amber-100' : 'border-gray-100'} hover:shadow-md transition-all relative overflow-hidden flex flex-col p-3 gap-2.5 ${isReward ? 'ring-2 ring-yellow-200' : ''}`}>
+               <div className={`absolute top-0 left-0 w-1.5 h-full ${isReward ? 'bg-yellow-400' : (isConfirmed ? 'bg-emerald-400' : (isWaitingConfirmation ? 'bg-amber-400' : 'bg-purple-400'))}`}></div>
                <div className="pl-3 flex justify-between items-center">
                   <div className="flex items-center gap-2">
                      <span className="text-xl font-black text-gray-800 tracking-tight poppins leading-none">{apt.time}</span>
@@ -1006,6 +1007,10 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({
                   {isReward ? (
                       <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-yellow-100 text-yellow-700 flex items-center gap-1">
                           <Crown size={10} /> PRÊMIO
+                      </span>
+                  ) : isWaitingConfirmation ? (
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1 animate-pulse">
+                         <Clock size={10} /> Aguardando Confirmação
                       </span>
                   ) : (
                       <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider ${isConfirmed ? 'bg-emerald-50 text-emerald-600' : 'bg-purple-50 text-purple-600'}`}>

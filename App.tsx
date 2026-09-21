@@ -96,6 +96,7 @@ import { StockConsumptionModal } from './components/StockConsumptionModal';
 import { LandingPage } from './components/LandingPage';
 import { HelpModal } from './components/HelpModal';
 import { AssistantOnboarding } from './components/AssistantOnboarding';
+import { PublicBookingPage } from './components/PublicBookingPage';
 
 // --- UTILS PARA VALIDAÇÃO E MÁSCARA ---
 
@@ -784,6 +785,22 @@ const App: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(() => typeof window !== 'undefined' ? window.innerWidth >= 768 : true);
   const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
   
+  // Public Booking Page access (via URL query param ?agendar=company-id or preview)
+  const [publicBookingCompanyId, setPublicBookingCompanyId] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const bookingParam = params.get('agendar') || params.get('agendamento') || params.get('booking');
+      if (bookingParam !== null) {
+        return bookingParam.trim() ? bookingParam.trim() : 'studio-alana-moreira';
+      }
+    } catch (e) {
+      console.error('Error reading booking param:', e);
+    }
+    return null;
+  });
+  const [copiedBookingLink, setCopiedBookingLink] = useState(false);
+  
   // Onboarding Interactive State (Assistant functionality disabled per user request)
   const [showAssistant, setShowAssistant] = useState(false);
   const [onboardingTaskStep, setOnboardingTaskStep] = useState(0); 
@@ -927,6 +944,9 @@ const App: React.FC = () => {
   const [reminderEnabled, setReminderEnabled] = useState(true);
   const [lowStockAlert, setLowStockAlert] = useState(true);
   const [birthdayAlert, setBirthdayAlert] = useState(true);
+  const [workOnSaturdays, setWorkOnSaturdays] = useState(true);
+  const [workOnSundays, setWorkOnSundays] = useState(false);
+  const [workOnHolidays, setWorkOnHolidays] = useState(false);
   const [lastAutoReportMonth, setLastAutoReportMonth] = useState<number | null>(null);
 
   const [isClientSelectorOpen, setIsClientSelectorOpen] = useState(false);
@@ -973,6 +993,9 @@ const App: React.FC = () => {
             setReminderEnabled(parsed.reminderEnabled ?? true);
             setLowStockAlert(parsed.lowStockAlert ?? true);
             setBirthdayAlert(parsed.birthdayAlert ?? true);
+            setWorkOnSaturdays(parsed.workOnSaturdays ?? true);
+            setWorkOnSundays(parsed.workOnSundays ?? false);
+            setWorkOnHolidays(parsed.workOnHolidays ?? false);
         }
 
         const autoReportKey = `gendly_last_auto_report_${user.companyId}`;
@@ -1002,6 +1025,9 @@ const App: React.FC = () => {
         setReminderEnabled(true);
         setLowStockAlert(true);
         setBirthdayAlert(true);
+        setWorkOnSaturdays(true);
+        setWorkOnSundays(false);
+        setWorkOnHolidays(false);
         setShowAssistant(false);
     }
   }, [user]);
@@ -1334,7 +1360,10 @@ const App: React.FC = () => {
         stockEnabled,
         companyUsersEnabled,
         stockWhatsApp,
-        stockReportDay
+        stockReportDay,
+        workOnSaturdays,
+        workOnSundays,
+        workOnHolidays
       };
       db.settings.set(user.companyId, settings);
       setCurrentView(ViewState.DASHBOARD);
@@ -1734,7 +1763,7 @@ const App: React.FC = () => {
           clientNickname: appointmentClient.nickname,
           avatar: appointmentClient.avatar || '',
           professional: data.professional,
-          professionalAvatar: `https://ui-avatars.com/api/?name=${data.professional}&background=random`,
+          professionalAvatar: companyProfessionals.find(p => (p.nickname && p.nickname === data.professional) || p.name === data.professional)?.avatar || `https://ui-avatars.com/api/?name=${data.professional}&background=random`,
           service: data.service,
           category: data.category,
           status: rewardDetails ? 'Confirmado' : 'Agendado',
@@ -1774,6 +1803,134 @@ const App: React.FC = () => {
       setIsNextSessionMode(false);
       setIsRenewalMode(false);
       setRewardDetails(null);
+  };
+
+  const handleSaveSmartAppointment = (data: {
+    date: string;
+    time: string;
+    service: string;
+    professional: string;
+    category: string;
+    client: { name: string; nickname?: string; whatsapp?: string; avatar?: string };
+  }) => {
+    if (!user) return;
+
+    let clientObj = companyClients.find(c => 
+      c.name.toLowerCase() === data.client.name.toLowerCase() ||
+      (c.nickname && c.nickname.toLowerCase() === data.client.name.toLowerCase()) ||
+      (data.client.whatsapp && c.whatsapp && c.whatsapp.replace(/\D/g, '') === data.client.whatsapp.replace(/\D/g, ''))
+    );
+
+    if (!clientObj) {
+      const newClient: Client = {
+        id: Date.now().toString(),
+        name: data.client.name,
+        nickname: data.client.nickname || data.client.name.split(' ')[0],
+        whatsapp: data.client.whatsapp || '',
+        birthday: '1995-01-01',
+        avatar: data.client.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(data.client.name)}&background=random`,
+        companyId: user.companyId
+      };
+      setAllClients(prev => [newClient, ...prev]);
+      clientObj = newClient;
+    }
+
+    const dateObj = new Date(data.date + 'T12:00:00');
+    const displayDate = dateObj.toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' }).replace('.', '');
+    const weekday = dateObj.toLocaleDateString('pt-BR', { weekday: 'long' }).split('-')[0].toUpperCase();
+
+    const profObj = companyProfessionals.find(p => 
+      (p.nickname && p.nickname === data.professional) || 
+      p.name === data.professional
+    );
+    const professionalAvatar = profObj?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(data.professional)}&background=random`;
+
+    const newApt: Appointment = {
+      id: Date.now(),
+      companyId: user.companyId,
+      time: data.time,
+      rawDate: data.date,
+      date: displayDate,
+      weekday: weekday,
+      client: clientObj.name,
+      clientNickname: clientObj.nickname,
+      avatar: clientObj.avatar || '',
+      professional: data.professional,
+      professionalAvatar: professionalAvatar,
+      service: data.service,
+      category: data.category || 'Serviço Avulso',
+      status: 'Aguardando Confirmação',
+      canRemind: true
+    };
+
+    setAppointments(prev => {
+      const updated = [...prev, newApt];
+      return updated.sort((a, b) => new Date(`${a.rawDate}T${a.time}`).getTime() - new Date(`${b.rawDate}T${b.time}`).getTime());
+    });
+  };
+
+  const handleSavePublicBooking = (targetCompanyId: string, data: {
+    date: string;
+    time: string;
+    service: string;
+    professional: string;
+    category: string;
+    client: { name: string; nickname?: string; whatsapp?: string; avatar?: string };
+  }) => {
+    const targetClients = allClients.filter(c => c.companyId === targetCompanyId);
+    let clientObj = targetClients.find(c => 
+      c.name.toLowerCase() === data.client.name.toLowerCase() ||
+      (c.nickname && c.nickname.toLowerCase() === data.client.name.toLowerCase()) ||
+      (data.client.whatsapp && c.whatsapp && c.whatsapp.replace(/\D/g, '') === data.client.whatsapp.replace(/\D/g, ''))
+    );
+
+    if (!clientObj) {
+      const newClient: Client = {
+        id: Date.now().toString(),
+        name: data.client.name,
+        nickname: data.client.nickname || data.client.name.split(' ')[0],
+        whatsapp: data.client.whatsapp || '',
+        birthday: '1995-01-01',
+        avatar: data.client.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(data.client.name)}&background=random`,
+        companyId: targetCompanyId
+      };
+      setAllClients(prev => [newClient, ...prev]);
+      clientObj = newClient;
+    }
+
+    const dateObj = new Date(data.date + 'T12:00:00');
+    const displayDate = dateObj.toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' }).replace('.', '');
+    const weekday = dateObj.toLocaleDateString('pt-BR', { weekday: 'long' }).split('-')[0].toUpperCase();
+
+    const targetProfessionals = allProfessionals.filter(p => p.companyId === targetCompanyId);
+    const profObj = targetProfessionals.find(p => 
+      (p.nickname && p.nickname === data.professional) || 
+      p.name === data.professional
+    );
+    const professionalAvatar = profObj?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(data.professional)}&background=random`;
+
+    const newApt: Appointment = {
+      id: Date.now(),
+      companyId: targetCompanyId,
+      time: data.time,
+      rawDate: data.date,
+      date: displayDate,
+      weekday: weekday,
+      client: clientObj.name,
+      clientNickname: clientObj.nickname,
+      avatar: clientObj.avatar || '',
+      professional: data.professional,
+      professionalAvatar: professionalAvatar,
+      service: data.service,
+      category: data.category || 'Serviço Online',
+      status: 'Aguardando Confirmação',
+      canRemind: true
+    };
+
+    setAppointments(prev => {
+      const updated = [...prev, newApt];
+      return updated.sort((a, b) => new Date(`${a.rawDate}T${a.time}`).getTime() - new Date(`${b.rawDate}T${b.time}`).getTime());
+    });
   };
 
   const handleConfirmPayment = (saleId: string, installmentNumber: number) => {
@@ -2175,6 +2332,35 @@ const App: React.FC = () => {
     }
   };
 
+  // Public Online Booking Page (Intelligent Customer Booking System)
+  if (publicBookingCompanyId) {
+    const bookingComp = companies.find(c => c.id === publicBookingCompanyId) || (currentCompany ? currentCompany : (companies[0] || COMPANY_STUDIO_ALANA));
+    const bookingServices = allProducts.filter(p => p.companyId === bookingComp.id && p.type === 'SERVICE');
+    const bookingProfessionals = allProfessionals.filter(p => p.companyId === bookingComp.id);
+    const bookingAppointments = appointments.filter(a => a.companyId === bookingComp.id);
+    const bookingSettings = db.settings.get(bookingComp.id);
+
+    return (
+      <PublicBookingPage
+        company={bookingComp}
+        services={bookingServices}
+        professionals={bookingProfessionals}
+        appointments={bookingAppointments}
+        settings={{
+          openingTime: bookingSettings?.openingTime || openingTime,
+          closingTime: bookingSettings?.closingTime || closingTime,
+          interval: bookingSettings?.schedulingInterval || schedulingInterval,
+          workOnSaturdays: bookingSettings?.workOnSaturdays ?? workOnSaturdays,
+          workOnSundays: bookingSettings?.workOnSundays ?? workOnSundays,
+          workOnHolidays: bookingSettings?.workOnHolidays ?? workOnHolidays,
+          pixKey: bookingSettings?.pixKey || pixKey
+        }}
+        onSaveAppointment={(data) => handleSavePublicBooking(bookingComp.id, data)}
+        onExitPreview={user ? () => setPublicBookingCompanyId(null) : undefined}
+      />
+    );
+  }
+
   if (showTrialEndModal && !isMasterAdmin) {
     return <TrialEndedModal onChoosePlan={handleTrialEndedAction} />;
   }
@@ -2537,7 +2723,25 @@ const App: React.FC = () => {
            )}
            
            {currentView === ViewState.CALENDAR && (
-             <CalendarView appointments={companyAppointments} onSlotClick={handleCalendarSlotClick} onAppointmentClick={(apt) => console.log('Appointment Clicked', apt)} openingTime={openingTime} closingTime={closingTime} interval={schedulingInterval} onNewAppointment={() => { setClientSelectorMode('APPOINTMENT'); setIsClientSelectorOpen(true); }} />
+             <CalendarView 
+               appointments={companyAppointments} 
+               services={companyServices}
+               professionals={companyProfessionals}
+               clients={companyClients}
+               onSlotClick={handleCalendarSlotClick} 
+               onAppointmentClick={(apt) => console.log('Appointment Clicked', apt)} 
+               openingTime={openingTime} 
+               closingTime={closingTime} 
+               interval={schedulingInterval} 
+               workOnSaturdays={workOnSaturdays}
+               workOnSundays={workOnSundays}
+               workOnHolidays={workOnHolidays}
+               onNewAppointment={() => { setClientSelectorMode('APPOINTMENT'); setIsClientSelectorOpen(true); }} 
+               onSaveSmartAppointment={handleSaveSmartAppointment}
+               companyName={currentCompany.name}
+               companyId={currentCompany.id}
+               onOpenPublicBooking={() => setPublicBookingCompanyId(currentCompany.id)}
+             />
            )}
 
            {currentView === ViewState.FINANCIAL && user.permissions.financial && (
@@ -2749,6 +2953,98 @@ const App: React.FC = () => {
                  <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2"><CalendarDays className="text-blue-500" /> Agenda & Horários</h3>
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6"><div><label className="block text-xs font-bold text-taupe-500 uppercase tracking-wider mb-2">Abertura</label><input type="time" value={openingTime} onChange={(e) => setOpeningTime(e.target.value)} className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl" /></div><div><label className="block text-xs font-bold text-taupe-500 uppercase tracking-wider mb-2">Fechamento</label><input type="time" value={closingTime} onChange={(e) => setClosingTime(e.target.value)} className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl" /></div></div>
                  <div className="space-y-6"><div><label className="block text-xs font-bold text-taupe-500 uppercase tracking-wider mb-2">Intervalo Padrão (minutos)</label><select value={schedulingInterval} onChange={(e) => setSchedulingInterval(Number(e.target.value))} className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl"><option value={15}>15 minutos</option><option value={30}>30 minutos</option><option value={45}>45 minutos</option><option value={60}>1 hora</option></select></div><div><label className="block text-xs font-bold text-taupe-500 uppercase tracking-wider mb-2">Alerta de Atendimento (min antes)</label><input type="number" value={appointmentAlertTime} onChange={(e) => setAppointmentAlertTime(Number(e.target.value))} className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl" /></div></div>
+
+                 {/* Opções de Expediente aos Sábados, Domingos e Feriados */}
+                 <div className="pt-6 mt-6 border-t border-gray-100 space-y-4">
+                   <div>
+                     <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Expediente em Fins de Semana e Feriados</label>
+                     <p className="text-xs text-gray-400">Defina se haverá expediente comercial nestas datas. Se desativado, o sistema organiza os horários apenas nos dias úteis e bloqueia agendamentos nas datas sem expediente.</p>
+                   </div>
+
+                   <div className="space-y-2.5">
+                     <label className="flex items-center justify-between p-3.5 bg-gray-50 hover:bg-gray-100/70 rounded-2xl border border-gray-200 cursor-pointer transition-colors">
+                       <div>
+                         <span className="text-sm font-bold text-gray-800 block">Expediente aos Sábados</span>
+                         <span className="text-xs text-gray-500">Permitir atendimentos e horários livres aos sábados</span>
+                       </div>
+                       <input 
+                         type="checkbox" 
+                         checked={workOnSaturdays} 
+                         onChange={(e) => setWorkOnSaturdays(e.target.checked)} 
+                         className="w-5 h-5 accent-purple-600 rounded cursor-pointer"
+                       />
+                     </label>
+
+                     <label className="flex items-center justify-between p-3.5 bg-gray-50 hover:bg-gray-100/70 rounded-2xl border border-gray-200 cursor-pointer transition-colors">
+                       <div>
+                         <span className="text-sm font-bold text-gray-800 block">Expediente aos Domingos</span>
+                         <span className="text-xs text-gray-500">Permitir atendimentos e horários livres aos domingos</span>
+                       </div>
+                       <input 
+                         type="checkbox" 
+                         checked={workOnSundays} 
+                         onChange={(e) => setWorkOnSundays(e.target.checked)} 
+                         className="w-5 h-5 accent-purple-600 rounded cursor-pointer"
+                       />
+                     </label>
+
+                     <label className="flex items-center justify-between p-3.5 bg-gray-50 hover:bg-gray-100/70 rounded-2xl border border-gray-200 cursor-pointer transition-colors">
+                       <div>
+                         <span className="text-sm font-bold text-gray-800 block">Expediente em Feriados</span>
+                         <span className="text-xs text-gray-500">Permitir atendimentos em feriados nacionais oficiais</span>
+                       </div>
+                       <input 
+                         type="checkbox" 
+                         checked={workOnHolidays} 
+                         onChange={(e) => setWorkOnHolidays(e.target.checked)} 
+                         className="w-5 h-5 accent-purple-600 rounded cursor-pointer"
+                       />
+                     </label>
+
+                     {/* Link da Agenda Online para Clientes */}
+                     <div className="mt-5 pt-4 border-t border-gray-200">
+                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-2.5">
+                         <div>
+                           <span className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                             <CalendarIcon size={16} className="text-purple-600" />
+                             Link da Agenda Online para Clientes
+                           </span>
+                           <span className="text-xs text-gray-500">
+                             Disponibilize este link para seus clientes agendarem horários livres diretamente
+                           </span>
+                         </div>
+                         <div className="flex items-center gap-2">
+                           <button
+                             type="button"
+                             onClick={() => {
+                               const publicUrl = `${window.location.origin}${window.location.pathname}?agendar=${encodeURIComponent(currentCompany?.id || 'studio-alana-moreira')}`;
+                               navigator.clipboard.writeText(publicUrl);
+                               setCopiedBookingLink(true);
+                               setTimeout(() => setCopiedBookingLink(false), 2500);
+                             }}
+                             className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 shadow-sm ${
+                               copiedBookingLink 
+                                 ? 'bg-emerald-500 text-white' 
+                                 : 'bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200'
+                             }`}
+                           >
+                             {copiedBookingLink ? 'Copiado!' : 'Copiar Link'}
+                           </button>
+                           <button
+                             type="button"
+                             onClick={() => setPublicBookingCompanyId(currentCompany?.id || 'studio-alana-moreira')}
+                             className="px-3 py-1.5 text-xs font-bold bg-purple-600 hover:bg-purple-700 text-white rounded-xl transition-colors shadow-sm shadow-purple-200"
+                           >
+                             Abrir Página do Cliente
+                           </button>
+                         </div>
+                       </div>
+                       <div className="bg-gray-50 rounded-xl p-3 border border-gray-200 text-xs text-gray-600 font-mono break-all select-all">
+                         {typeof window !== 'undefined' ? `${window.location.origin}${window.location.pathname}?agendar=${encodeURIComponent(currentCompany?.id || 'studio-alana-moreira')}` : ''}
+                       </div>
+                     </div>
+                   </div>
+                 </div>
                </div>
                
                <div className="bg-white rounded-3xl p-6 md:p-8 shadow-sm border border-gray-100 mb-6">
@@ -2932,7 +3228,20 @@ const App: React.FC = () => {
       <SpecialtyModal isOpen={isSpecialtyModalOpen} onClose={() => setIsSpecialtyModalOpen(false)} specialties={companySpecialties} onAdd={handleAddSpecialty} onDelete={handleDeleteSpecialty} />
       <ClientSelector isOpen={isClientSelectorOpen} onClose={() => setIsClientSelectorOpen(false)} onSelect={handleClientSelect} clients={companyClients} />
       <SalesModal isOpen={isSalesModalOpen} onClose={() => { setIsSalesModalOpen(false); setSaleClient(null); if (isPackagePaymentFlow) setIsPackagePaymentFlow(false); }} onFinish={handleFinishSale} client={saleClient} products={companyStoreItems} maxInstallments={maxInstallments} pixKey={pixKey} interestRate={interestRate} interestStart={interestStart} initialCart={initialCart} promotions={companyPromotions} />
-      <AppointmentModal isOpen={isAppointmentModalOpen} onClose={() => { setIsAppointmentModalOpen(false); setAppointmentClient(null); setAppointmentPreSelection(undefined); setFixedService(null); setIsNextSessionMode(false); setIsRenewalMode(false); setRewardDetails(null); }} onSave={handleSaveAppointment} client={appointmentClient} services={companyServices} appointments={companyAppointments} settings={{ openingTime, closingTime, interval: schedulingInterval }} initialDate={appointmentPreSelection?.date} initialTime={appointmentPreSelection?.time} fixedService={fixedService} promotions={companyPromotions} />
+      <AppointmentModal 
+        isOpen={isAppointmentModalOpen} 
+        onClose={() => { setIsAppointmentModalOpen(false); setAppointmentClient(null); setAppointmentPreSelection(undefined); setFixedService(null); setIsNextSessionMode(false); setIsRenewalMode(false); setRewardDetails(null); }} 
+        onSave={handleSaveAppointment} 
+        client={appointmentClient} 
+        services={companyServices} 
+        professionals={companyProfessionals}
+        appointments={companyAppointments} 
+        settings={{ openingTime, closingTime, interval: schedulingInterval, workOnSaturdays, workOnSundays, workOnHolidays }} 
+        initialDate={appointmentPreSelection?.date} 
+        initialTime={appointmentPreSelection?.time} 
+        fixedService={fixedService} 
+        promotions={companyPromotions} 
+      />
       <LoyaltyRewardModal isOpen={!!rewardDetails && false} onClose={() => {}} client={null} products={companyProducts} onRegisterRedemption={handleRegisterRedemption} />
     </div>
   );

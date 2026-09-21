@@ -1,7 +1,8 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { X, Calendar, Clock, User, CheckCircle2, AlertCircle, Scissors, Layers, Tag } from 'lucide-react';
-import { Client, Product, Appointment, Promotion } from '../types';
+import { Client, Product, Appointment, Promotion, Professional } from '../types';
+import { getNonWorkingReason } from '../services/scheduleUtils';
 
 interface AppointmentModalProps {
   isOpen: boolean;
@@ -10,10 +11,14 @@ interface AppointmentModalProps {
   client: Client | null;
   services: Product[];
   appointments: Appointment[];
+  professionals?: Professional[];
   settings: {
     openingTime: string;
     closingTime: string;
     interval: number;
+    workOnSaturdays?: boolean;
+    workOnSundays?: boolean;
+    workOnHolidays?: boolean;
   };
   initialDate?: string;
   initialTime?: string;
@@ -98,6 +103,7 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
     client, 
     services, 
     appointments,
+    professionals = [],
     settings,
     initialDate,
     initialTime,
@@ -107,17 +113,21 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
     // Correct local date string YYYY-MM-DD
     const todayLocal = useMemo(() => new Date().toLocaleDateString('en-CA'), []);
 
+    const defaultProfName = useMemo(() => {
+        return professionals.length > 0 ? (professionals[0].nickname || professionals[0].name) : 'Geral';
+    }, [professionals]);
+
     const [date, setDate] = useState(todayLocal);
     const [time, setTime] = useState('');
     const [selectedServiceId, setSelectedServiceId] = useState('');
-    const [professional, setProfessional] = useState('Ju');
+    const [professional, setProfessional] = useState(defaultProfName);
     const [activeTab, setActiveTab] = useState<'SINGLE' | 'PACKAGE'>('SINGLE');
 
     useEffect(() => {
         if (isOpen) {
             setDate(initialDate || todayLocal);
             setTime(initialTime || '');
-            setProfessional('Ju');
+            setProfessional(defaultProfName);
             setActiveTab('SINGLE');
             
             if (fixedService) {
@@ -127,21 +137,30 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
                 setSelectedServiceId('');
             }
         }
-    }, [isOpen, initialDate, initialTime, fixedService, services, todayLocal]);
+    }, [isOpen, initialDate, initialTime, fixedService, services, todayLocal, defaultProfName]);
+
+    const nonWorkingReason = useMemo(() => {
+        if (!date) return null;
+        const worksSat = settings.workOnSaturdays ?? true;
+        const worksSun = settings.workOnSundays ?? false;
+        const worksHol = settings.workOnHolidays ?? false;
+        return getNonWorkingReason(date, worksSat, worksSun, worksHol);
+    }, [date, settings.workOnSaturdays, settings.workOnSundays, settings.workOnHolidays]);
 
     const allSlots = useMemo(() => {
+        if (nonWorkingReason) return [];
         return generateSlots(settings.openingTime, settings.closingTime, settings.interval);
-    }, [settings]);
+    }, [settings, nonWorkingReason]);
 
     const busyTimes = useMemo(() => {
         if (!date) return [];
         return appointments
-            .filter(apt => apt.rawDate === date && apt.status !== 'Cancelado')
+            .filter(apt => apt.rawDate === date && apt.status !== 'Cancelado' && (!professional || apt.professional === professional))
             .map(apt => apt.time);
-    }, [date, appointments]);
+    }, [date, appointments, professional]);
 
     const availableSlots = useMemo(() => {
-        if (!date) return [];
+        if (!date || nonWorkingReason) return [];
         
         const now = new Date();
         const isToday = date === todayLocal;
@@ -158,7 +177,7 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
             }
             return true;
         });
-    }, [date, busyTimes, allSlots, todayLocal]);
+    }, [date, nonWorkingReason, busyTimes, allSlots, todayLocal]);
 
     const { singles, packages } = useMemo(() => {
         return {
@@ -324,6 +343,12 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
                         <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">Horários Disponíveis</label>
                         {!date ? (
                             <div className="text-center py-6 text-gray-400 text-sm bg-gray-50 rounded-xl border border-dashed border-gray-200">Selecione uma data primeiro.</div>
+                        ) : nonWorkingReason ? (
+                            <div className="text-center py-4 px-3 text-amber-700 text-xs bg-amber-50 rounded-xl border border-amber-200 font-bold">
+                                <AlertCircle className="mx-auto mb-1 text-amber-500" size={18} />
+                                {nonWorkingReason}
+                                <div className="text-[11px] font-normal text-amber-600 mt-1">Selecione uma data útil com expediente para visualizar os horários livres.</div>
+                            </div>
                         ) : availableSlots.length > 0 ? (
                             <div className="grid grid-cols-4 gap-2 max-h-40 overflow-y-auto custom-scrollbar pr-1">
                                 {availableSlots.map((slot) => (
@@ -343,28 +368,53 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
                         ) : (
                             <div className="text-center py-4 text-rose-400 text-sm bg-rose-50 rounded-xl border border-rose-100 font-bold">
                                 <AlertCircle className="mx-auto mb-1" size={18} />
-                                Sem horários livres hoje.
+                                Sem horários livres hoje para este profissional.
                             </div>
                         )}
                     </div>
                     
                     <div>
                          <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">Profissional</label>
-                         <div className="flex gap-3">
-                            {['Ju', 'Pri', 'Ana'].map(prof => (
-                                <button
-                                    key={prof}
-                                    onClick={() => setProfessional(prof)}
-                                    className={`flex-1 py-2 rounded-xl border text-sm font-bold transition-all ${
-                                        professional === prof
-                                        ? 'bg-purple-100 text-purple-700 border-purple-200'
-                                        : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'
-                                    }`}
-                                >
-                                    {prof}
-                                </button>
-                            ))}
-                         </div>
+                         {professionals.length > 0 ? (
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-36 overflow-y-auto custom-scrollbar p-1">
+                               {professionals.map(prof => {
+                                   const profName = prof.nickname || prof.name;
+                                   const isSelected = professional === profName;
+                                   return (
+                                       <button
+                                           key={prof.id}
+                                           type="button"
+                                           onClick={() => {
+                                               setProfessional(profName);
+                                               setTime('');
+                                           }}
+                                           className={`flex items-center gap-2 p-2 rounded-xl border text-xs font-bold transition-all text-left ${
+                                               isSelected
+                                               ? 'bg-purple-100 text-purple-800 border-purple-300 ring-2 ring-purple-300 shadow-xs'
+                                               : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50 hover:border-purple-200'
+                                           }`}
+                                       >
+                                           {prof.avatar ? (
+                                               <img src={prof.avatar} alt={profName} className="w-6 h-6 rounded-full object-cover shrink-0 border border-white shadow-xs" />
+                                           ) : (
+                                               <div className="w-6 h-6 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center font-bold text-[10px] shrink-0">
+                                                   {profName.charAt(0)}
+                                               </div>
+                                           )}
+                                           <span className="truncate">{profName}</span>
+                                       </button>
+                                   );
+                               })}
+                            </div>
+                         ) : (
+                            <input 
+                                type="text"
+                                value={professional}
+                                onChange={(e) => setProfessional(e.target.value)}
+                                placeholder="Nome do profissional"
+                                className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-200 outline-none font-bold text-gray-700"
+                            />
+                         )}
                     </div>
                 </div>
 

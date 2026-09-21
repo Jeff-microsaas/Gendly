@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gendly MicroSaaS Multi-Empresas</title>
+    <meta name="description" content="MicroSaaS robusto, rápido e intuitivo para gestão multi-empresas com dashboard completo, agendamento, financeiro e controle de acessos." />
+    <meta property="og:title" content="Gendly MicroSaaS Multi-Empresas" />
+    <meta property="og:description" content="MicroSaaS robusto, rápido e intuitivo para gestão multi-empresas com dashboard completo, agendamento, financeiro e controle de acessos." />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+              serif: ['Playfair Display', 'serif'],
+            },
+            colors: {
+              // Gendly Palette
+              gendly: {
+                purple: '#a855f7', // Purple-500
+                pink: '#ec4899',   // Pink-500
+                cyan: '#06b6d4',   // Cyan-500
+              },
+              // Legacy Palette (kept for compatibility)
+              cream: {
+                50: '#f9fafb',  // Lighter, cleaner gray/white
+                100: '#f3f4f6',
+                200: '#e5e7eb',
+                300: '#d1d5db',
+              },
+              rose: {
+                50: '#fff1f2',
+                100: '#ffe4e6',
+                200: '#fecdd3',
+                300: '#fda4af',
+                400: '#fb7185',
+                500: '#f43f5e',
+                600: '#e11d48',
+                700: '#be123c',
+              },
+              lilac: {
+                50: '#faf5ff',
+                100: '#f3e8ff',
+                200: '#e9d5ff',
+                300: '#d8b4fe',
+                400: '#c084fc',
+                500: '#a855f7',
+                600: '#9333ea',
+              },
+              taupe: {
+                500: '#6b7280', // Cool gray
+                600: '#4b5563',
+                700: '#374151',
+                800: '#1f2937',
+                900: '#111827',
+              }
+            }
+          }
+        }
+      }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+    <style>
+      body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; color: #1f2937; }
+      h1, h2, h3, h4, .font-serif { font-family: 'Inter', sans-serif; letter-spacing: -0.025em; }
+      
+      /* Custom scrollbar */
+      ::-webkit-scrollbar { width: 6px; height: 6px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 10px; }
+      ::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+      
+      .gradient-text {
+        background-clip: text;
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent; 
+        background-image: linear-gradient(to right, #a855f7, #ec4899);
+      }
+      
+      .sidebar-gradient {
+        background: linear-gradient(90deg, #a855f7 0%, #ec4899 100%);
+      }
+      
+      .banner-gradient {
+        background: linear-gradient(90deg, #a855f7 0%, #ec4899 100%);
+      }
+
+      /* Fix for Date Inputs: Expand the picker indicator to cover the whole input */
+      /* This ensures clicking anywhere on the opacity-0 input triggers the calendar */
+      input[type="date"].full-click::-webkit-calendar-picker-indicator {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        cursor: pointer;
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "recharts": "https://aistudiocdn.com/recharts@^3.4.1",
+    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.554.0",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.30.0"
+  }
+}
+</script>
+</head>
+  <body>
+    <div id="root"></div>
+  <script type="module" src="/index.tsx"></script>
+</body>
+</html>
